@@ -1,4 +1,4 @@
-module image_gen
+module myapp
 
 go 1.22.1
 

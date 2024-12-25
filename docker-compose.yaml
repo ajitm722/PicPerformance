@@ -2,34 +2,34 @@
 version: "3.9"
 services:
   myapp:
-    build: ./my-app            # Build and run the application
+    build: ./my-app # Build and run the application
     ports:
-      - 8080:8080              # Expose app functionality
-      - 8081:8081              # Expose Prometheus metrics
+      - 8080:8080 # Expose app functionality
+      - 8081:8081 # Expose Prometheus Metrics
 
   prometheus:
-    image: prom/prometheus:v2.40.4   # Use the Prometheus Docker image
+    image: prom/prometheus:v2.40.4 # Use the Prometheus Docker image
     ports:
-      - 9090:9090              # Expose Prometheus web UI
+      - 9090:9090 # Expose Prometheus web UI
     volumes:
       - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
-                                # Mount Prometheus configuration file
+        # Mount Prometheus configuration file
 
   grafana:
-    image: grafana/grafana:9.3.0     # Use the Grafana Docker image
+    image: grafana/grafana:9.3.0 # Use the Grafana Docker image
     ports:
-      - 3000:3000              # Expose Grafana web UI
+      - 3000:3000 # Expose Grafana web UI
     environment:
       - GF_SECURITY_ADMIN_USER=admin
-                                # Set admin username for Grafana
+        # Set admin username for Grafana
       - GF_SECURITY_ADMIN_PASSWORD=devops123
-                                # Set admin password for Grafana
+        # Set admin password for Grafana
     volumes:
       - ./grafana/datasources.yaml:/etc/grafana/provisioning/datasources/datasources.yaml
-                                # Mount Grafana datasource configuration
+        # Mount Grafana datasource configuration
       - grafana:/var/lib/grafana
-                                # Persistent storage for Grafana dashboards and settings
+        # Persistent storage for Grafana dashboards and settings
 
 volumes:
-  grafana:                      # Named volume for Grafana persistence
+  grafana: # Named volume for Grafana persistence
 

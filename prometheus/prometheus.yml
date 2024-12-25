@@ -3,8 +3,8 @@ global:
   evaluation_interval: 5s      # Frequency to evaluate any alerting rules
 
 scrape_configs:
-- job_name: myapp              # Logical name for the application metrics
+- job_name: myapp              # Logical name for the application Metrics
   static_configs:
-  - targets:                   # Define the list of targets to scrape metrics from
-    - "myapp:8081"             # `myapp` service at port `8081` (Prometheus metrics)
+  - targets:                   # Define the list of targets to scrape Metrics from
+    - "myapp:8081"             # `myapp` service at port `8081` (Prometheus Metrics)
 
