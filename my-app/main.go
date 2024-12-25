@@ -21,16 +21,16 @@ type Image struct {
 }
 
 type metrics struct {
-	images          prometheus.Gauge
-	info            *prometheus.GaugeVec
-	processingCount *prometheus.CounterVec
-	duration        *prometheus.HistogramVec
-	loginDuration   prometheus.Summary
+	processing_images prometheus.Gauge
+	info              *prometheus.GaugeVec
+	processed_images  prometheus.Gauge
+	duration          *prometheus.HistogramVec
+	loginDuration     prometheus.Summary
 }
 
 func NewMetrics(reg prometheus.Registerer) *metrics {
 	m := &metrics{
-		images: prometheus.NewGauge(prometheus.GaugeOpts{
+		processing_images: prometheus.NewGauge(prometheus.GaugeOpts{
 			Namespace: "myapp",
 			Name:      "processing_images",
 			Help:      "Number of images currently being processed.",
@@ -41,11 +41,11 @@ func NewMetrics(reg prometheus.Registerer) *metrics {
 			Help:      "Information about the image processing environment.",
 		},
 			[]string{"version"}),
-		processingCount: prometheus.NewCounterVec(prometheus.CounterOpts{
+		processed_images: prometheus.NewGauge(prometheus.GaugeOpts{
 			Namespace: "myapp",
-			Name:      "total_images_processed",
+			Name:      "processed_images",
 			Help:      "Number of images processed.",
-		}, []string{"type"}),
+		}),
 		duration: prometheus.NewHistogramVec(prometheus.HistogramOpts{
 			Namespace: "myapp",
 			Name:      "request_duration_seconds",
@@ -59,7 +59,7 @@ func NewMetrics(reg prometheus.Registerer) *metrics {
 			Objectives: map[float64]float64{0.5: 0.05, 0.9: 0.01, 0.99: 0.001},
 		}),
 	}
-	reg.MustRegister(m.images, m.info, m.processingCount, m.duration, m.loginDuration)
+	reg.MustRegister(m.processing_images, m.info, m.processed_images, m.duration, m.loginDuration)
 	return m
 }
 
@@ -79,7 +79,10 @@ func main() {
 	reg := prometheus.NewRegistry()
 	m := NewMetrics(reg)
 
-	m.images.Set(float64(len(imgs)))
+	ProcessingAndProcessedImagesCount := getProcessingAndProcessedImagesCount()
+	m.processing_images.Set(float64(ProcessingAndProcessedImagesCount[0]))
+	m.processed_images.Set(float64(ProcessingAndProcessedImagesCount[1]))
+
 	m.info.With(prometheus.Labels{"version": version}).Set(1)
 
 	dMux := http.NewServeMux()
@@ -115,7 +118,7 @@ type registerImagesHandler struct {
 func (rdh registerImagesHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case "GET":
-		getImages(w, r, rdh.metrics)
+		getProcessingImages(w, r, rdh.metrics)
 	case "POST":
 		createImage(w, r, rdh.metrics)
 	default:
@@ -124,24 +127,50 @@ func (rdh registerImagesHandler) ServeHTTP(w http.ResponseWriter, r *http.Reques
 	}
 }
 
-func getImages(w http.ResponseWriter, r *http.Request, m *metrics) {
+func getProcessingImages(w http.ResponseWriter, r *http.Request, m *metrics) {
 	now := time.Now()
 
-	b, err := json.Marshal(imgs)
+	// Filter images that are currently being processed (IMG_status == "Processing")
+	var processingImages []Image
+	for _, img := range imgs {
+		if img.IMG_status == "Processing" {
+			processingImages = append(processingImages, img)
+		}
+	}
+
+	b, err := json.Marshal(processingImages)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
+
 	sleep(200)
 
+	// Record the request duration in Prometheus
 	m.duration.With(prometheus.Labels{"method": "GET", "status": "200"}).Observe(time.Since(now).Seconds())
 
-	// Print the number of processed images to log for simulation
-	log.Printf("Retrieved %d images", len(imgs))
+	// Print the number of images being processed to the log
+	log.Printf("Retrieved %d images being processed", len(processingImages))
 
+	// Set the response headers and body
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	w.Write(b)
+}
+
+func getProcessingAndProcessedImagesCount() [2]int {
+	var processingCount int
+	var processedCount int
+
+	for _, img := range imgs {
+		if img.IMG_status == "Processing" {
+			processingCount++
+		} else if img.IMG_status == "Processed" {
+			processedCount++
+		}
+	}
+
+	return [2]int{processingCount, processedCount}
 }
 
 func createImage(w http.ResponseWriter, r *http.Request, m *metrics) {
@@ -155,14 +184,16 @@ func createImage(w http.ResponseWriter, r *http.Request, m *metrics) {
 
 	imgs = append(imgs, img)
 
-	// Update the processed images count
-	m.images.Set(float64(len(imgs)))
+	// Update the processing and processed images count
+	ProcessingAndProcessedImagesCount := getProcessingAndProcessedImagesCount()
+	m.processing_images.Set(float64(ProcessingAndProcessedImagesCount[0]))
+	m.processed_images.Set(float64(ProcessingAndProcessedImagesCount[1]))
 
 	// Print out the new image details to simulate image processing
 	log.Printf("Image created: ID=%d, Format=%s, Resolution=%s Status=%s", img.ID, img.Format, img.Resolution, img.IMG_status)
 
 	w.WriteHeader(http.StatusCreated)
-	w.Write([]byte("Processing Image!"))
+	w.Write([]byte("Created Image!"))
 }
 
 func processImage(w http.ResponseWriter, r *http.Request, m *metrics) {
@@ -186,16 +217,17 @@ func processImage(w http.ResponseWriter, r *http.Request, m *metrics) {
 			imgs[i].IMG_status = "Processed"
 		}
 	}
+	ProcessingAndProcessedImagesCount := getProcessingAndProcessedImagesCount()
+	m.processing_images.Set(float64(ProcessingAndProcessedImagesCount[0]))
+	m.processed_images.Set(float64(ProcessingAndProcessedImagesCount[1]))
+
 	sleep(1000)
 
-	// Increment the processing count
-	m.processingCount.With(prometheus.Labels{"type": "resize"}).Inc()
-
 	// Print the processed image details to the log
-	log.Printf("Image processed: ID=%d, New Resolution=%s", img.ID, "Processed")
+	log.Printf("Image processed: ID=%d", img.ID)
 
 	w.WriteHeader(http.StatusAccepted)
-	w.Write([]byte("Processing image..."))
+	w.Write([]byte("Processed Image.."))
 }
 
 type manageImagesHandler struct {
